@@ -36,6 +36,10 @@ void I2C_reg_read() {
   I2C_stop();
 }
 
+// read 16-bit register sA (returned back in sB.sA)
+// device address is already in I2C_BUFFER(1)
+
+
 // write sA to register sB.
 // device address is already in I2C_BUFFER(2)
 // Z is set on total success

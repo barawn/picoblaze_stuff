@@ -74,6 +74,8 @@ void dac_convert_address() {
   // Channel 64 is the VSLOPE ADC automatically.
   if (sA == 64) {
     KSET_I2C_BUS(0);
+    // OPTIMIZE 1
+    // use load&return
     sA = DAC_ADDR_VSLOPE;
     return;
   }
@@ -97,6 +99,10 @@ void dac_convert_address() {
   // add it to 62 (62, 64, 66, 68)
   sA += DAC_ADDR_0;
   // and if's equal to 0x68, switch it
+  // magic can save an instruction here
+  // w/compare, ret NZ, load&return
+  // OPTIMIZE 1
+  // use load&return
   if (sA == DAC_ADDR_INVALID) {
     sA = DAC_ADDR_3;
   }
@@ -137,10 +143,14 @@ void dac_write() {
 // 98/9A/9C/A0
 // so channel 8 needs to map
 // to "9A".
-#define SWITCH0_ADDR
+#define SWITCH0_ADDR 0x98
+
 void switch_write() {
+  // copy sA into sB
   sB = sA;
+  // only grab low 3 bits (0-7)
   sB &= 0x7;
+  // mask off 
   sA &= 0xF8;
   sA >>= 2;
   sA += SWITCH0_ADDR;
