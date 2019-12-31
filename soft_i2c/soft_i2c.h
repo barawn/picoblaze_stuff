@@ -209,4 +209,22 @@ void I2C_write_bytes_process() {
   sA -= ( (I2C_BUFFER_BASE-1) & 0xFF );
 }
 
-  
+// read 1 byte from sA with no stop
+// sets C on error
+void I2C_read1_process() {
+  I2C_start();
+  I2C_Tx_byte_and_Rx_ACK();
+  psm("return C");
+  I2C_Rx_byte();
+}
+
+// set the read register, fetch back the pointer
+// and set read byte
+void I2C_update_read_reg_turnaround() {
+  sC = I2C_BUFFER(1);
+  I2C_start();
+  I2C_write_bytes_process();
+  psm("return NZ");
+  fetch(I2C_BUFFER(1), sA);
+  sA |= 0x1;
+}

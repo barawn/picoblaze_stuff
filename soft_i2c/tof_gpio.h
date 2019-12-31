@@ -3,9 +3,7 @@
 
 #define MULTIGPIO
 #include "gpio.h"
-
-#define GP0_ADDR 0x40
-#define GP1_ADDR 0x42
+#include "tof_device_addresses.h"
 
 // create gpio0/gpio1 functions
 GPIO_FUNCTIONS( gpio0 , GP0_ADDR)

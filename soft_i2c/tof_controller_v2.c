@@ -7,8 +7,48 @@
 
 #define sSpare sF
 
+#include "tof_device_addresses.h"
 #include "tof_devices.h"
 #include "pb_stack.h"
+
+/*
+ * Config addresses:
+ * 0-7:   VTHTRIGA0,VTHTRIGA1,VSETA1,VSETA0,VSETA2,VSETA3,VTHTIMA,VHYSTA
+ * 8-15:  VTHTRIGB0,VTHTRIGB1,VSETB1,VSETB0,VSETB2,VSETB3,VTHTIMB,VHYSTB
+ * 16-23: VTHTRIGC0,VTHTRIGC1,VSETC1,VSETC0,VSETC2,VSETC3,VTHTIMC,VHYSTC
+ * 24-31: VTHTRIGD0,VTHTRIGD1,VSETD1,VSETD0,VSETD2,VSETD3,VTHTIMD,VHYSTD
+ * 32-39: VTHTRIGE0,VTHTRIGE1,VSETE1,VSETE0,VSETE2,VSETE3,VTHTIME,VHYSTE
+ * 40-47: VTHTRIGF0,VTHTRIGF1,VSETF1,VSETF0,VSETF2,VSETF3,VTHTIMF,VHYSTF
+ * 48-55: VTHTRIGG0,VTHTRIGG1,VSETG1,VSETG0,VSETG2,VSETG3,VTHTIMG,VHYSTG
+ * 56-63: VTHTRIGH0,VTHTRIGH1,VSETH1,VSETH0,VSETH2,VSETH3,VTHTIMH,VHYSTH
+ * 64: VSLOPE
+ * 65: ENABLES ( [14] \FEEPENE, [13] \FEEPENF, [12] \FEEPENG, [11] \FEEPENH,
+ *                [7] \FEEPENA, [6]  \FEEPENB, [5]  \FEEPENC,  [4] \FEEPENB,
+ *                [3] \VP75EN )
+ *
+ * Monitor addresses:
+ * 0-7:   RMONA2, VCOMPA, RMONA1, RMONA0, IMONA3, IMONA2, IMONA1, IMONA0
+ * 8-15:  RMONB2, VCOMPB, RMONB1, RMONB0, IMONB3, IMONB2, IMONB1, IMONB0
+ * 16-23: RMONC2, VCOMPC, RMONC1, RMONC0, IMONC3, IMONC2, IMONC1, IMONC0
+ * 24-31: RMOND2, VCOMPD, RMOND1, RMOND0, IMOND3, IMOND2, IMOND1, IMOND0
+ * 32-39: RMONE2, VCOMPE, RMONE1, RMONE0, IMONE3, IMONE2, IMONE1, IMONE0
+ * 40-47: RMONF2, VCOMPF, RMONF1, RMONF0, IMONF3, IMONF2, IMONF1, IMONF0
+ * 48-55: RMONG2, VCOMPG, RMONG1, RMONG0, IMONG3, IMONG2, IMONG1, IMONG0
+ * 56-63: RMONH2, VCOMPH, RMONG1, RMONG0, IMONG3, IMONG2, IMONG1, IMONG0
+ * 64: RMONA3
+ * 65: RMONE3
+ * 72: RMONB3
+ * 73: RMONF3
+ * 80: RMONC3
+ * 81: RMONG3
+ * 88: RMOND3
+ * 89: RMONH3
+ * 96: TEMP0
+ * 97: TEMP1
+ * 98: VIN
+ * 101: VOUT
+ * 102: IOUT
+ */
 
 #define CFG_DATA                     0x20
 #define CFG_ADDR                     0x40
@@ -16,6 +56,7 @@
 #define MON_ADDR                     0x80
 #define MONITOR_RATE                 0xA0
 #define READYINIT                    0xC0
+#define MONSTATUS                    0xE0
 
 #define READY                        0x80
 #define INIT                         0x40
@@ -23,6 +64,8 @@
 #define UPDATECOMPLETE               0x04
 #define UPDATING                     0x02
 #define UPDATEREQ                    0x01
+
+#define MONCYCLETOGGLE               0x80
 
 void init() {
   stack_init();
@@ -76,7 +119,7 @@ void loop() {
 	sA = s1;
 	dac_write();
       }
-    } while (s1 != 64);
+    } while (s1 != 65);
     output( CFG_ADDR, s1);
     input( CFG_DATA, sA);   // lo byte[7:3] I2C0
     input( CFG_DATA+1, sB); // hi byte[6:3] I2C1
@@ -113,7 +156,6 @@ void loop() {
 #define MONITOR_COUNT_2 s2
 #define MONITOR_CHANNEL s3
 #define MONITOR_STATE   s4
-
 // call monitor_reset and move immediate to ST_SYNC
 #define ST_RESET 0
 // call monitor_sync_check on both I2C busses until both acknowledge
@@ -129,7 +171,15 @@ void loop() {
 // (channels 96+).
 #define ST_TEMP_0 5
 #define ST_TEMP_1 6
-#define ST_PMON 7
+#define ST_PMON_0 7
+#define ST_PMON_1 8
+#define ST_PMON_2 9
+#define ST_FINISH 10
+
+#define PMON_CONTROL 0xD3
+#define PMON_VIN 0x88
+#define PMON_VOUT 0x8B
+// PMON_IOUT is determined programmatically, it's 0x8C
 
 void monitor_init() {
   psm("regbank B");
@@ -200,51 +250,82 @@ void monitor() {
     }
     psm("jump monitor_finish");
   }
-  if (MONITOR_STATE < ST_PMON) {
+  if (MONITOR_STATE < ST_PMON_0) {
     monitor_temp_read();
     MONITOR_STATE += 1;
-    if (MONITOR_STATE == ST_PMON) {
+    if (MONITOR_STATE == ST_PMON_0) {
       // still on I2C BUS 1
-      sB = 0xD3;
+      sB = PMON_CONTROL;
       sA = 0x1;
-      sSpare = 0x30;
+      sSpare = PMON_ADDR;
       store(I2C_BUFFER(2), sSpare);
       I2C_reg_write();
     }
-    psm("jump_monitor_finish");
+    psm("jump monitor_finish");
   }
-  // ST_PMON
-  monitor_tick();
-  psm("jump NZ, monitor_finish");
-
-  
-  
-monitor_finish:
+  if (MONITOR_STATE == ST_PMON_0) {
+    monitor_tick();
+    psm("jump NZ, monitor_finish");
+  }
+  monitor_pmon_read();
+  MONITOR_STATE += 1;
+  if (MONITOR_STATE == ST_FINISH) {
+    MONITOR_STATE = ST_EXTEND;
+    MONITOR_CHANNEL = 0;
+    // maybe do something to flag
+    // a completed cycle
+    sSpare = ( MONCYCLETOGGLE | ST_EXTEND );
+    output(MONSTATUS, sSpare);
+  }
+ monitor_finish:
+  // let the world know what we're doing
+  output(MONSTATUS, MONITOR_STATE);
   psm("regbank A");  
 }
 
-#define TEMP_ADDR 0x90
-#define TEMP_ADDR_RD 0x91
+// we read out VIN/VOUT/IOUT
+// these are 88/8B/8C
+// and are stored in 98/101/102 
+void monitor_pmon_read() {
+  sSpare = PMON_ADDR;
+  store(I2C_BUFFER(1), sSpare);
+  // construct the channel from the monitor state
+  s5 = MONITOR_STATE;
+  s5 -= ST_PMON_0;
+  // s5 = 0, 1, or 2
+  if (Z != 0) {
+    s5 += 2;
+  }
+  // s5 = 0, 3, 4
+  s5 += 98;
+  // s5 = 98, 101, 102
+  sA = s5;
+  // sA = 88, 8B, 8C
+  sA += 38;
+  I2C_reg_read16();  
+  monitor_output();
+}
+
+// 96/97 are the two temperature channels
 #define TEMP_CHANNEL_0 96
 void monitor_temp_read() {
   sSpare = MONITOR_STATE;
   sSpare -= ST_TEMP_0;
+  // 0 or 1
   SET_I2C_BUS(sSpare);
-  // sigh, set pointer
-  I2C_start();
   sSpare = TEMP_ADDR;
   store(I2C_BUFFER(1), sSpare);
-  sSpare = 0;
-  store(I2C_BUFFER(0), sSpare);
-  sC = I2C_BUFFER(1);
-  I2C_write_bytes_process();
-  sA = TEMP_ADDR_RD;
-  I2C_two_byte_read();
+  // read register 0
+  sA = 0;
+  I2C_reg_read16();
   s5 = MONITOR_STATE;
   s5 += (TEMP_CHANNEL_0 - ST_TEMP_0);
+  // make s5 96/97
   monitor_output();
 }
 
+// clear XSEL in ST_EXTEND, otherwise
+// set it. Leave everything else high.
 void toggle_xsel() {
   sA = 0xFF;
   if (MONITOR_STATE == ST_EXTEND) {
@@ -252,8 +333,9 @@ void toggle_xsel() {
   }
   gpio0_write_output();
 }
-    
-  
+
+// read extended monitor
+// from bus s5
 void monitor_extend_read() {
   SET_I2C_BUS(s5);
   if (sA == 32) {
@@ -306,6 +388,8 @@ void monitor_tick() {
   // Z should be preserved here
 }
 
+// this is now a nested function inside I2C_reg_read16
+/*
 void I2C_two_byte_read() {
   I2C_start();
   I2C_Tx_byte_and_Rx_ACK();
@@ -327,9 +411,7 @@ void I2C_two_byte_read() {
   // use load&return
   sB.sA = 0xFFFF;  
 }
-
-#define ADC_ADDR    0x28
-#define ADC_ADDR_RD 0x29
+*/
 
 void monitor_operation() {
   // Monitor cycle is:
@@ -339,8 +421,8 @@ void monitor_operation() {
   // we do this because as soon as we read the ADC
   // it starts converting again.
   switch_write();
-  sA = ADC_ADDR_RD;
-  I2C_two_byte_read();
+  sA = ADC_ADDR_RD;  
+  I2C_read_two_bytes();
 }
 
 void monitor_reset() {

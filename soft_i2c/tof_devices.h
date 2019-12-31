@@ -1,10 +1,5 @@
 #include "soft_i2c_user.h"
-
-#define DAC_ADDR_0 0x62
-#define DAC_ADDR_INVALID 0x68
-#define DAC_ADDR_3 0x80
-#define DAC_ADDR_VSLOPE 0x20
-
+#include "tof_device_addresses.h"
 #include "tof_gpio.h"
 
 void gpio_init() {
@@ -66,6 +61,9 @@ void spi_write_byte() {
     // when sE is 0x1, the downshift makes carry set
   } while (!C);
 }
+
+// no device at address 0x68, it's 0x80
+#define DAC_ADDR_INVALID 0x68
 
 // Converts the DAC address in sA
 // into chip address (sA) and channel address (sB)
@@ -143,7 +141,6 @@ void dac_write() {
 // 98/9A/9C/A0
 // so channel 8 needs to map
 // to "9A".
-#define SWITCH0_ADDR 0x98
 
 void switch_write() {
   // copy sA into sB

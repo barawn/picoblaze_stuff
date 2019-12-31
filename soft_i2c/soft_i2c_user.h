@@ -5,6 +5,22 @@
 // to I2C base.
 // on return sA contains number of remaining bytes
 // (Z is set on total success)
+void I2C_write_bytes();
+
+// read register sA (returned back in sA)
+// device address is already in I2C_BUFFER(1)
+void I2C_reg_read();
+
+// read 1 byte from device address in sA
+void I2C_read_one_byte();
+
+// read 16-bit register sA (returned back in sB.sA)
+// device address is already in I2C_BUFFER(1)
+void I2C_reg_read16();
+
+// read 2 bytes from device address in sA
+void I2C_read_two_bytes();
+
 void I2C_write_bytes() {
   // save sA since sA/sB get clobbered
   // in I2C_Tx_byte_and_Rx_ACK()
@@ -16,29 +32,48 @@ void I2C_write_bytes() {
 
 // read register sA (returned back in sA)
 // device address is already in I2C_BUFFER(1)
-void I2C_reg_read() {
+// This has a nested "read 1 byte" function.
+// which doesn't update a register beforehand.
+void I2C_reg_read(){
   store(I2C_BUFFER(0), sA);
-  sC = I2C_BUFFER(1);
-  I2C_start();
-  I2C_write_bytes_process();
+  // set register and turn around to read
+  // this gets used in multiple places
+  I2C_update_read_reg_turnaround();
   psm("jump NZ, I2C_reg_read_failure");
-  fetch(I2C_BUFFER(1), sA);
-  sA |= 0x1;
-  I2C_start();
-  I2C_Tx_byte_and_Rx_ACK();
-  psm("jump C, I2C_reg_read_failure");
-  I2C_Rx_byte();
-  // sA isn't clobbered by anything
+ I2C_read_one_byte:
+  I2C_read1_process();
+  if (C != 0) {
+  I2C_reg_read_failure:
+    sA = 0xFF;
+    psm("jump I2C_reg_read_failure_end");
+  }
   I2C_Tx_NACK();
-  // this is a bad idea, obviously,
-  // need to fix this somehow
- I2C_reg_read_failure:
+ I2C_reg_read_failure_end:
   I2C_stop();
 }
 
 // read 16-bit register sA (returned back in sB.sA)
 // device address is already in I2C_BUFFER(1)
-
+void I2C_reg_read16() {
+  store(I2C_BUFFER(0), sA);
+  I2C_update_read_reg_turnaround();
+  psm("jump NZ, I2C_reg_read16_failure");
+ I2C_read_two_bytes:
+  I2C_read1_process();
+  if (C != 0) {
+  I2C_reg_read16_failure:
+    sB.sA = 0xFFFF;
+    psm("jump I2C_reg_read16_failure_end");
+  }
+  push1();
+  I2C_Tx_ACK();
+  I2C_Rx_byte();
+  I2C_Tx_NACK();
+  sB = sA;
+  pop1();
+ I2C_reg_read16_failure_end:
+  I2C_stop();
+}
 
 // write sA to register sB.
 // device address is already in I2C_BUFFER(2)
